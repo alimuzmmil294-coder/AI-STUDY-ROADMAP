@@ -29,14 +29,12 @@ st.markdown("""
 
 # Helper to load API Key from Streamlit Secrets, Environment Variables, or Sidebar Input
 def get_api_key():
-    # 1. Check Streamlit Cloud Secrets
     try:
         if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
             return st.secrets["GEMINI_API_KEY"], True
     except FileNotFoundError:
         pass
 
-    # 2. Check OS Environment Variable (useful for local dev)
     env_key = os.environ.get("GEMINI_API_KEY")
     if env_key:
         return env_key, True
@@ -44,6 +42,14 @@ def get_api_key():
     return "", False
 
 configured_key, is_preconfigured = get_api_key()
+
+# Active Gemini API Models
+AVAILABLE_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-4-carbon",
+    "gemini-4-neon"
+]
 
 # Sidebar for API Configuration and User Preferences
 with st.sidebar:
@@ -69,9 +75,9 @@ with st.sidebar:
     st.header("⚙️ Model Settings")
     model_choice = st.selectbox(
         "Select Gemini Model",
-        options=["gemini-3.8-flash", "gemini-3.8-pro"],
+        options=AVAILABLE_MODELS,
         index=0,
-        help="Flash is faster and ideal for standard plans; Pro excels at deeply technical or multi-month curricula."
+        help="Flash and Flash-Lite are fast and reliable; Gemini 4 models offer deeper reasoning."
     )
     
     st.divider()
@@ -169,20 +175,39 @@ if submitted:
                 6. **Study & Retention Tips:** Tailored advice to avoid burnout and retain the material.
                 """
 
-                response = client.models.generate_content(
-                    model=model_choice,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=(
-                            "You are an expert curriculum designer, senior software engineer, and academic mentor. "
-                            "Build practical, well-paced study roadmaps that strictly respect the user's daily hour constraints. "
-                            "Avoid fluff and ensure every phase has clear deliverables."
-                        ),
-                        temperature=0.7,
-                    )
-                )
+                # Try selected model first, then automatically fall back on 503 traffic spikes
+                models_to_try = [model_choice] + [m for m in AVAILABLE_MODELS if m != model_choice]
+                
+                response = None
+                used_model = model_choice
+                last_error = None
 
-                st.success("✅ Roadmap generated successfully!")
+                for candidate_model in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=candidate_model,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                system_instruction=(
+                                    "You are an expert curriculum designer, senior software engineer, and academic mentor. "
+                                    "Build practical, well-paced study roadmaps that strictly respect the user's daily hour constraints. "
+                                    "Avoid fluff and ensure every phase has clear deliverables."
+                                ),
+                                temperature=0.7,
+                            )
+                        )
+                        used_model = candidate_model
+                        break
+                    except Exception as model_err:
+                        last_error = model_err
+                        if "503" in str(model_err) or "UNAVAILABLE" in str(model_err):
+                            continue
+                        raise model_err
+
+                if response is None:
+                    raise last_error
+
+                st.success(f"✅ Roadmap generated successfully using `{used_model}`!")
                 st.divider()
                 
                 # Display Roadmap
