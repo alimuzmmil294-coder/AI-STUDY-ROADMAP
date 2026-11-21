@@ -69,7 +69,7 @@ with st.sidebar:
     st.header("⚙️ Model Settings")
     model_choice = st.selectbox(
         "Select Gemini Model",
-        options=["gemini-2.5-flash", "gemini-2.5-pro"],
+        options=["gemini-3.8-flash", "gemini-3.8-pro"],
         index=0,
         help="Flash is faster and ideal for standard plans; Pro excels at deeply technical or multi-month curricula."
     )
